@@ -372,3 +372,11 @@ raise OnyxError(OnyxErrorCode.BAD_GATEWAY, detail, status_code_override=e.respon
 In addition to the other content in this file, best practices for contributing
 to the codebase can be found in the "Engineering Best Practices" section of
 `CONTRIBUTING.md`. Understand its contents and follow them.
+
+## Cursor Cloud specific instructions
+
+- **Python venv**: Created at `.venv` using `uv venv --python 3.11`. Activate with `source .venv/bin/activate`. Dependencies installed via `uv sync --group backend --group dev`.
+- **Frontend**: `web/` uses Bun (`bun.lock`). Run `bun install` then `bun dev` for the Next.js dev server.
+- **Unit tests**: `pytest -xv backend/tests/unit` runs ~1325 tests. One test (`test_confluence_checkpointing`) may fail due to Redis not being available — this is expected in environments without Docker services.
+- **Docker services**: Full integration/E2E tests require PostgreSQL, Redis, Vespa, and MinIO running via Docker Compose (see `deployment/docker_compose/`). Unit tests do not require these.
+- **Lint**: Use `source .venv/bin/activate && pre-commit run --all-files` for full linting (Python + JS).
