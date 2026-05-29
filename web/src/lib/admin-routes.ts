@@ -78,6 +78,12 @@ export const ADMIN_ROUTES = {
     title: "Document Feedback",
     sidebarLabel: "Feedback",
   },
+  ALEIVA: {
+    path: "/aleiva",
+    icon: SvgTerminal,
+    title: "Aleiva Matrix",
+    sidebarLabel: "Aleiva Matrix",
+  },
   AGENTS: {
     path: "/admin/agents",
     icon: SvgOnyxOctagon,

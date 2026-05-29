@@ -221,4 +221,7 @@ export const SWR_KEYS = {
     `/api/build/scheduled-tasks/${taskId}/runs`,
   scheduledRunContext: (sessionId: string) =>
     `/api/build/sessions/${sessionId}/scheduled-run-context`,
+
+  // ── Aleiva Matrix ─────────────────────────────────────────────────────────
+  aleivaRunStatus: "/api/aleiva/runs/status",
 } as const;

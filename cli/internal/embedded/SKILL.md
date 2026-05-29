@@ -175,6 +175,32 @@ Do NOT use either when:
 - The user is asking about code in the current repository (use grep/read tools)
 - The user hasn't mentioned Onyx and the question doesn't require internal company data
 
+## Aleiva Matrix (dry-run via API)
+
+`onyx-cli` does not yet expose Aleiva subcommands. To trigger a **dry-run** cycle from a terminal or agent script, call the Onyx API through the frontend BFF (same auth as the web UI):
+
+```bash
+# Dry-run one Aleiva cycle (no mutations)
+curl -s -X POST "${ONYX_SERVER_URL:-http://localhost:3000}/api/aleiva/runs/dry" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${ONYX_PAT}" \
+  -d '{"goal":"Refactor parser module with focused unit tests","policy_tier":"safe"}'
+
+# Voice control — read-only status intent
+curl -s -X POST "${ONYX_SERVER_URL:-http://localhost:3000}/api/aleiva/voice/control" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${ONYX_PAT}" \
+  -d '{"intent":"status"}'
+
+# Trading analysis (non-execution, analysis-only)
+curl -s -X POST "${ONYX_SERVER_URL:-http://localhost:3000}/api/aleiva/trading/analysis" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${ONYX_PAT}" \
+  -d '{"market":"crypto","symbol":"BTC-USD","timeframe":"4h","thesis":"bullish continuation"}'
+```
+
+Use the Aleiva Matrix dashboard at `/aleiva` for explainability, queue status, and memory hygiene. Prefer `policy_tier: "safe"` and dry-run endpoints until live execution is explicitly required.
+
 ## Examples
 
 ```bash

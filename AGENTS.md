@@ -372,3 +372,22 @@ raise OnyxError(OnyxErrorCode.BAD_GATEWAY, detail, status_code_override=e.respon
 In addition to the other content in this file, best practices for contributing
 to the codebase can be found in the "Engineering Best Practices" section of
 `CONTRIBUTING.md`. Understand its contents and follow them.
+
+## Learned User Preferences
+
+- Aleiva work: prefer `uv run` (worktree `.venv`) for pytest and ruff; avoid git push, npm install, and docker unless required.
+- Do not commit Aleiva changes on `feat-aleiva-mvp` until the change is complete and local Aleiva tests pass.
+- After each Aleiva task cluster, run `aleiva-spec-guardian` then `aleiva-quality-reviewer` before continuing.
+
+## Learned Workspace Facts
+
+- Aleiva MVP lives on branch `feat-aleiva-mvp` in git worktree `.worktrees/a` (gitignored; add with `git worktree add .worktrees/a feat-aleiva-mvp`).
+- New worktrees need `uv sync` once; run Aleiva tests with `uv run python -m pytest backend/tests/unit/onyx/aleiva_core backend/tests/unit/server/features/aleiva` and lint with `uv run ruff check` on those same paths.
+- Core module: `backend/onyx/aleiva_core/`; HTTP API: `backend/onyx/server/features/aleiva/api.py` (router prefix `/aleiva`, wired in `backend/onyx/main.py`).
+- External API paths are `/api/aleiva/...`; frontend uses `ALEIVA_API_BASE = "/api/aleiva"` in `web/src/app/aleiva/constants.ts`.
+- Key endpoints: POST `/runs/dry`, `/runs`, `/autopilot/run`, `/memory/hygiene`, `/voice/control`, `/trading/analysis`; GET `/runs/status`.
+- Dashboard UI: `web/src/app/aleiva/` at `/aleiva`; Playwright E2E in `web/tests/e2e/aleiva/aleiva_dashboard.spec.ts`.
+- Local Aleiva queue and second-brain state persist under repo-root `.aleiva/`.
+- Spec and plan: `docs/superpowers/specs/2026-05-23-aleiva-hybrid-mvp-design.md`, `docs/superpowers/plans/2026-05-23-aleiva-hybrid-mvp-core-plan.md`.
+- Project Cursor subagents: `.cursor/agents/aleiva-orchestrator.md`, `aleiva-spec-guardian.md`, `aleiva-quality-reviewer.md`.
+- First Aleiva MVP push on this branch: commit `f9c16b05`.
