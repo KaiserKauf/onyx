@@ -3,7 +3,7 @@
 import Card from "@/refresh-components/cards/Card";
 import Text from "@/refresh-components/texts/Text";
 import { Section } from "@/layouts/general-layouts";
-import type { AleivaDryRunExplainability } from "@/app/aleiva/interfaces";
+import type { AleivaDryRunExplainability } from "@/app/aleiva/explainability-types";
 import { AleivaMatrixShell } from "@/app/aleiva/components/AleivaMatrixShell";
 
 interface ExplainabilityPanelProps {

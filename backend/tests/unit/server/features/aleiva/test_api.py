@@ -124,6 +124,35 @@ def test_aleiva_status_endpoint_exposes_dashboard_fields(tmp_path: Path) -> None
     assert body["memory_hygiene"]["sampled_entries"] >= 1
     assert body["memory_hygiene"]["actions"]
     assert body["latest_runs"]
+    assert "kpi_trends" in body
+
+
+def test_aleiva_status_endpoint_includes_kpi_trends_after_run(tmp_path: Path) -> None:
+    app = FastAPI()
+    app.include_router(aleiva_router, prefix="/api")
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if not path.startswith("/api/aleiva/"):
+            continue
+        for dependency in route.dependant.dependencies:
+            app.dependency_overrides[dependency.cache_key[0]] = lambda: object()
+
+    with patch.object(aleiva_api_module, "_ALEIVA_STORE_DIR", tmp_path / "aleiva"), patch.object(
+        aleiva_api_module, "_ALEIVA_QUEUE_DIR", tmp_path / "aleiva"
+    ):
+        client = TestClient(app)
+        run_response = client.post("/api/aleiva/runs", json={"goal": "Refactor parser"})
+        assert run_response.status_code == 200
+
+        response = client.get("/api/aleiva/runs/status")
+
+    assert response.status_code == 200
+    kpi_trends = response.json()["kpi_trends"]
+    assert kpi_trends is not None
+    assert kpi_trends["current"]["speed"] > 0
+    assert kpi_trends["current"]["quality"] > 0
+    assert kpi_trends["trend"] in {"improving", "stable", "declining"}
+    assert len(kpi_trends["points"]) >= 1
 
 
 def test_aleiva_voice_control_endpoint_handles_start_and_status(tmp_path: Path) -> None:

@@ -23,6 +23,7 @@ import { LatestRunsPanel } from "@/app/aleiva/components/LatestRunsPanel";
 import { MemoryHygienePanel } from "@/app/aleiva/components/MemoryHygienePanel";
 import { VoiceControlPanel } from "@/app/aleiva/components/VoiceControlPanel";
 import { TradingAnalysisPanel } from "@/app/aleiva/components/TradingAnalysisPanel";
+import { KpiTrendsPanel } from "@/app/aleiva/components/KpiTrendsPanel";
 import { ADMIN_ROUTES } from "@/lib/admin-routes";
 import { SvgPlayCircle, SvgRefreshCw } from "@opal/icons";
 
@@ -124,6 +125,7 @@ export default function AleivaDashboardPage() {
         ) : (
           <Section gap={1.5}>
             <QueueStatusCards queue={data?.queue} />
+            <KpiTrendsPanel kpiTrends={data?.kpi_trends} />
             <RunGoalPanel onDryRunComplete={handleDryRunComplete} />
             <ExplainabilityPanel
               explainability={lastDryRun?.explainability ?? null}

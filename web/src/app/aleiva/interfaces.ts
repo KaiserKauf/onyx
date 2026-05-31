@@ -1,3 +1,19 @@
+import type {
+  AleivaDryRunExplainability,
+  AleivaKpiTrendsSummary,
+} from "@/app/aleiva/explainability-types";
+
+export type {
+  AleivaDryRunExplainability,
+  AleivaExplainabilityEnvelope,
+  AleivaKpiSnapshot,
+  AleivaKpiTrendDirection,
+  AleivaKpiTrendPoint,
+  AleivaKpiTrendsSummary,
+  AleivaMemoryHygieneActionDetail,
+  AleivaPriorityScoreDetail,
+} from "@/app/aleiva/explainability-types";
+
 export type AleivaPolicyTier = "safe" | "normal" | "experimental";
 
 export interface AleivaQueueSummary {
@@ -26,38 +42,7 @@ export interface AleivaRunStatusResponse {
   queue: AleivaQueueSummary;
   latest_runs: AleivaRunArtifactSummary[];
   memory_hygiene: AleivaMemoryHygieneSummary;
-}
-
-export interface AleivaPriorityScoreDetail {
-  task: string;
-  impact: number;
-  confidence: number;
-  effort: number;
-  score: number;
-}
-
-export interface AleivaMemoryHygieneActionDetail {
-  action_type: string;
-  message: string;
-  topic: string;
-  learning: string;
-  contradicted_learning: string | null;
-  previous_confidence: number | null;
-  updated_confidence: number | null;
-}
-
-export interface AleivaDryRunExplainability {
-  goal: string;
-  policy_tier: string;
-  decisions: string[];
-  planned_steps: string[];
-  safety_checks: string[];
-  priority_scores: string[];
-  memory_hygiene_actions: string[];
-  guardrail_events: string[];
-  policy_controls: Record<string, number | string>;
-  priority_score_details: AleivaPriorityScoreDetail[];
-  memory_hygiene_action_details: AleivaMemoryHygieneActionDetail[];
+  kpi_trends: AleivaKpiTrendsSummary | null;
 }
 
 export interface AleivaRunResponse {

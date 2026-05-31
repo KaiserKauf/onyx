@@ -4,11 +4,10 @@ from typing import Literal
 
 from fastapi import APIRouter
 from fastapi import Depends
-from pydantic import BaseModel
-from pydantic import Field
 
 from onyx.aleiva_core.controller import AleivaAutopilotController
 from onyx.aleiva_core.controller import AleivaTaskQueue
+from onyx.aleiva_core.eval import build_kpi_trends
 from onyx.aleiva_core.orchestrator import AleivaRunResult
 from onyx.aleiva_core.orchestrator import run_aleiva_cycle
 from onyx.aleiva_core.second_brain.hygiene import apply_memory_hygiene
@@ -23,146 +22,28 @@ from onyx.db.enums import Permission
 from onyx.db.models import User
 from onyx.error_handling.error_codes import OnyxErrorCode
 from onyx.error_handling.exceptions import OnyxError
+from onyx.server.features.aleiva.explainability import build_dry_run_explainability
+from onyx.server.features.aleiva.models import AleivaAutopilotCycleSummary
+from onyx.server.features.aleiva.models import AleivaAutopilotRunRequest
+from onyx.server.features.aleiva.models import AleivaAutopilotRunResponse
+from onyx.server.features.aleiva.models import AleivaKpiSnapshot
+from onyx.server.features.aleiva.models import AleivaKpiTrendPoint
+from onyx.server.features.aleiva.models import AleivaKpiTrendsSummary
+from onyx.server.features.aleiva.models import AleivaMemoryHygieneRunResponse
+from onyx.server.features.aleiva.models import AleivaMemoryHygieneSummary
+from onyx.server.features.aleiva.models import AleivaQueueSummary
+from onyx.server.features.aleiva.models import AleivaRunArtifactSummary
+from onyx.server.features.aleiva.models import AleivaRunRequest
+from onyx.server.features.aleiva.models import AleivaRunResponse
+from onyx.server.features.aleiva.models import AleivaRunStatusResponse
+from onyx.server.features.aleiva.models import AleivaTradingAnalysisRequest
+from onyx.server.features.aleiva.models import AleivaTradingAnalysisResponse
+from onyx.server.features.aleiva.models import AleivaVoiceControlRequest
+from onyx.server.features.aleiva.models import AleivaVoiceControlResponse
 
 router = APIRouter(prefix="/aleiva")
 _ALEIVA_STORE_DIR = Path(__file__).resolve().parents[4] / ".aleiva"
 _ALEIVA_QUEUE_DIR = Path(__file__).resolve().parents[4] / ".aleiva"
-
-
-class AleivaRunRequest(BaseModel):
-    goal: str = Field(min_length=1)
-    policy_tier: Literal["safe", "normal", "experimental"] = "normal"
-
-
-class AleivaDryRunExplainability(BaseModel):
-    goal: str
-    policy_tier: str
-    decisions: list[str]
-    planned_steps: list[str]
-    safety_checks: list[str]
-    priority_scores: list[str]
-    memory_hygiene_actions: list[str]
-    guardrail_events: list[str]
-    policy_controls: dict[str, int | str]
-    priority_score_details: list["AleivaPriorityScoreDetail"]
-    memory_hygiene_action_details: list["AleivaMemoryHygieneActionDetail"]
-
-
-class AleivaPriorityScoreDetail(BaseModel):
-    task: str
-    impact: float
-    confidence: float
-    effort: float
-    score: float
-
-
-class AleivaMemoryHygieneActionDetail(BaseModel):
-    action_type: str
-    message: str
-    topic: str
-    learning: str
-    contradicted_learning: str | None = None
-    previous_confidence: float | None = None
-    updated_confidence: float | None = None
-
-
-class AleivaRunResponse(BaseModel):
-    status: str
-    lane: str
-    plan: list[str]
-    execution: list[str]
-    verification: list[str]
-    learnings: list[str]
-    policy_tier: str | None = None
-    policy_controls: dict[str, int | str] | None = None
-    guardrail_events: list[str] | None = None
-    explainability: AleivaDryRunExplainability | None = None
-
-
-class AleivaQueueSummary(BaseModel):
-    queued: int
-    running: int
-    completed: int
-    failed: int
-    paused: int
-
-
-class AleivaMemoryHygieneSummary(BaseModel):
-    sampled_entries: int
-    action_count: int
-    actions: list[str]
-
-
-class AleivaRunArtifactSummary(BaseModel):
-    goal: str
-    final_disposition: str
-    lane: str
-    missing_artifacts: list[str]
-    verification_outcomes: list[str]
-
-
-class AleivaRunStatusResponse(BaseModel):
-    queue: AleivaQueueSummary
-    latest_runs: list[AleivaRunArtifactSummary]
-    memory_hygiene: AleivaMemoryHygieneSummary
-
-
-class AleivaVoiceControlRequest(BaseModel):
-    intent: Literal["start-run", "pause-run", "status", "report"]
-    goal: str | None = None
-    task_id: str | None = None
-    policy_tier: Literal["safe", "normal", "experimental"] = "safe"
-
-
-class AleivaVoiceControlResponse(BaseModel):
-    status: str
-    message: str
-    queue: AleivaQueueSummary
-    enqueued_task_id: str | None = None
-    report: dict[str, object] | None = None
-
-
-class AleivaTradingAnalysisRequest(BaseModel):
-    market: str = Field(min_length=1)
-    symbol: str = Field(min_length=1)
-    timeframe: str = Field(min_length=1)
-    thesis: str = Field(min_length=1)
-    risk_focus: str | None = None
-
-
-class AleivaTradingAnalysisResponse(BaseModel):
-    status: str
-    analysis: list[str]
-    risk_review: list[str]
-    non_execution_safeguards: list[str]
-    explainability: dict[str, object]
-
-
-class AleivaAutopilotRunRequest(BaseModel):
-    dry_run: bool = True
-    max_iterations: int = Field(default=20, ge=1, le=100)
-
-
-class AleivaAutopilotCycleSummary(BaseModel):
-    task_id: str
-    goal: str
-    status: str
-    reason: str
-    run_status: str | None = None
-
-
-class AleivaAutopilotRunResponse(BaseModel):
-    cycles_completed: int
-    cycles: list[AleivaAutopilotCycleSummary]
-    queue: AleivaQueueSummary
-
-
-class AleivaMemoryHygieneRunResponse(BaseModel):
-    deduplicated_count: int
-    decay_action_count: int
-    action_count: int
-    contradiction_guidance: list[str]
-    actions: list[str]
 
 
 @router.post("/runs/dry")
@@ -177,47 +58,10 @@ def run_dry_cycle(
         user=user,
     )
     response = AleivaRunResponse.model_validate(result.__dict__)
-    response.explainability = AleivaDryRunExplainability(
+    response.explainability = build_dry_run_explainability(
         goal=request.goal,
-        policy_tier=result.policy_tier or request.policy_tier,
-        decisions=[
-            f"selected lane: {result.lane}",
-            "dry-run mode enabled; no mutations executed",
-        ],
-        planned_steps=[*result.plan, *result.execution, *result.verification],
-        safety_checks=[
-            "commands validated against allowlist/blocklist policy",
-            "mutating operations disabled in dry-run mode",
-        ],
-        guardrail_events=result.guardrail_events or [],
-        policy_controls=result.policy_controls or {},
-        priority_scores=[
-            f"{entry.task}: {entry.score:.3f}"
-            for entry in result.selected_priority_scores
-        ],
-        memory_hygiene_actions=result.memory_hygiene_actions,
-        priority_score_details=[
-            AleivaPriorityScoreDetail(
-                task=entry.task,
-                impact=entry.impact,
-                confidence=entry.confidence,
-                effort=entry.effort,
-                score=entry.score,
-            )
-            for entry in result.selected_priority_details
-        ],
-        memory_hygiene_action_details=[
-            AleivaMemoryHygieneActionDetail(
-                action_type=entry.action_type,
-                message=entry.message,
-                topic=entry.topic,
-                learning=entry.learning,
-                contradicted_learning=entry.contradicted_learning,
-                previous_confidence=entry.previous_confidence,
-                updated_confidence=entry.updated_confidence,
-            )
-            for entry in result.memory_hygiene_action_details
-        ],
+        policy_tier=request.policy_tier,
+        result=result,
     )
     return response
 
@@ -252,12 +96,14 @@ def run_status(
         paused=sum(1 for task in queue_tasks if task.status == "paused"),
     )
 
+    latest_run_entries = store.list_run_artifacts(limit=10)
     latest_runs = [
         _serialize_run_artifact(entry)
-        for entry in store.list_run_artifacts(limit=10)
+        for entry in latest_run_entries
     ]
     sampled_entries = store.list_learnings(limit=30)
     hygiene = apply_memory_hygiene(sampled_entries)
+    kpi_trends = _serialize_kpi_trends(latest_run_entries)
 
     return AleivaRunStatusResponse(
         queue=queue_summary,
@@ -267,6 +113,7 @@ def run_status(
             action_count=len(hygiene.actions),
             actions=hygiene.actions,
         ),
+        kpi_trends=kpi_trends,
     )
 
 
@@ -421,6 +268,34 @@ def _serialize_run_artifact(entry: RunArtifactEntry) -> AleivaRunArtifactSummary
         lane=entry.lane,
         missing_artifacts=entry.missing_artifacts,
         verification_outcomes=entry.verification_outcomes,
+    )
+
+
+def _serialize_kpi_trends(
+    run_entries: list[RunArtifactEntry],
+) -> AleivaKpiTrendsSummary | None:
+    trends = build_kpi_trends(run_entries)
+    if trends is None:
+        return None
+    return AleivaKpiTrendsSummary(
+        current=AleivaKpiSnapshot(
+            speed=trends.current.speed,
+            quality=trends.current.quality,
+            knowledge_reuse=trends.current.knowledge_reuse,
+            lane=trends.current.lane,
+        ),
+        trend=trends.trend,
+        points=[
+            AleivaKpiTrendPoint(
+                run_index=point.run_index,
+                goal=point.goal,
+                speed=point.speed,
+                quality=point.quality,
+                knowledge_reuse=point.knowledge_reuse,
+                lane=point.lane,
+            )
+            for point in trends.points
+        ],
     )
 
 

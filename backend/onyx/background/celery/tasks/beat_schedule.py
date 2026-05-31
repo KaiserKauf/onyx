@@ -6,6 +6,7 @@ from celery.schedules import crontab
 
 from onyx.configs.app_configs import AUTO_LLM_CONFIG_URL
 from onyx.configs.app_configs import AUTO_LLM_UPDATE_INTERVAL_SECONDS
+from onyx.configs.app_configs import ALEIVA_MEMORY_HYGIENE_SCHEDULE_ENABLED
 from onyx.configs.app_configs import DISABLE_OPENSEARCH_MIGRATION_TASK
 from onyx.configs.app_configs import DISABLE_VECTOR_DB
 from onyx.configs.app_configs import ENABLE_OPENSEARCH_INDEXING_FOR_ONYX
@@ -262,6 +263,20 @@ if SCHEDULED_EVAL_DATASET_NAMES:
                 minute=0,
                 day_of_week=0,
             ),
+            "options": {
+                "priority": OnyxCeleryPriority.LOW,
+                "expires": BEAT_EXPIRES_DEFAULT,
+            },
+        }
+    )
+
+# Opt-in Aleiva second-brain hygiene (non-breaking default: disabled).
+if ALEIVA_MEMORY_HYGIENE_SCHEDULE_ENABLED:
+    beat_task_templates.append(
+        {
+            "name": "aleiva-memory-hygiene",
+            "task": OnyxCeleryTask.ALEIVA_MEMORY_HYGIENE_TASK,
+            "schedule": timedelta(hours=1),
             "options": {
                 "priority": OnyxCeleryPriority.LOW,
                 "expires": BEAT_EXPIRES_DEFAULT,

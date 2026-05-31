@@ -161,6 +161,7 @@ celery_app.autodiscover_tasks(
             "onyx.background.celery.tasks.opensearch_migration",
             # Sandbox cleanup tasks (isolated in build feature)
             "onyx.server.features.build.sandbox.tasks",
+            "onyx.background.celery.tasks.aleiva",
         ]
     )
 )

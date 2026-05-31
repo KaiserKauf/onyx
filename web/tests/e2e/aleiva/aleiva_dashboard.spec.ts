@@ -68,6 +68,61 @@ test.describe("Aleiva Matrix dashboard", () => {
 
     await expect(page.getByTestId("aleiva-voice-response")).toBeVisible();
     await expect(page.getByText(/Queue — queued/)).toBeVisible();
+    await expect(page.getByText(/running/)).toBeVisible();
+  });
+
+  test("voice control start-run enqueues task with goal", async ({ page }) => {
+    await page.addInitScript((storageKey) => {
+      window.localStorage.setItem(storageKey, "true");
+    }, ALEIVA_ONBOARDING_STORAGE_KEY);
+
+    await page.goto("/aleiva");
+    await page.waitForLoadState("networkidle");
+
+    await page.getByTestId("aleiva-voice-intent-start-run").click();
+    await page
+      .getByTestId("aleiva-voice-goal-input")
+      .fill("Voice-enqueued Aleiva smoke goal");
+
+    const voiceResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/aleiva/voice/control") &&
+        response.status() === 200
+    );
+    await page.getByTestId("aleiva-voice-submit").click();
+    const response = await voiceResponse;
+    const body = (await response.json()) as {
+      status: string;
+      enqueued_task_id: string | null;
+    };
+
+    await expect(page.getByTestId("aleiva-voice-response")).toBeVisible();
+    expect(body.status).toBe("accepted");
+    expect(body.enqueued_task_id).toBeTruthy();
+    await expect(page.getByText(/Enqueued task:/)).toBeVisible();
+  });
+
+  test("voice control report intent shows control-plane report", async ({
+    page,
+  }) => {
+    await page.addInitScript((storageKey) => {
+      window.localStorage.setItem(storageKey, "true");
+    }, ALEIVA_ONBOARDING_STORAGE_KEY);
+
+    await page.goto("/aleiva");
+    await page.waitForLoadState("networkidle");
+
+    await page.getByTestId("aleiva-voice-intent-report").click();
+
+    const voiceResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/aleiva/voice/control") &&
+        response.status() === 200
+    );
+    await page.getByTestId("aleiva-voice-submit").click();
+    await voiceResponse;
+
+    await expect(page.getByTestId("aleiva-voice-report")).toBeVisible();
   });
 
   test("trading analysis panel submits thesis and shows safeguards", async ({
@@ -95,6 +150,24 @@ test.describe("Aleiva Matrix dashboard", () => {
 
     await expect(page.getByTestId("aleiva-trading-results")).toBeVisible();
     await expect(page.getByTestId("aleiva-trading-safeguards-list")).toBeVisible();
+    await expect(page.getByTestId("aleiva-trading-analysis-list")).toBeVisible();
+    await expect(page.getByTestId("aleiva-trading-risk-list")).toBeVisible();
+    await expect(page.getByText("analysis_only")).toBeVisible();
+    await expect(
+      page.getByText(/analysis-only mode enabled/i)
+    ).toBeVisible();
+  });
+
+  test("kpi trends panel renders after status load", async ({ page }) => {
+    await page.addInitScript((storageKey) => {
+      window.localStorage.setItem(storageKey, "true");
+    }, ALEIVA_ONBOARDING_STORAGE_KEY);
+
+    await page.goto("/aleiva");
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.getByTestId("aleiva-kpi-trends")).toBeVisible();
+    await expect(page.getByText("Balanced KPI trends")).toBeVisible();
   });
 
   test("admin sidebar links to Aleiva dashboard", async ({ page }) => {
