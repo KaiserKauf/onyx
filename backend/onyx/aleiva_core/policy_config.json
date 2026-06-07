@@ -15,7 +15,7 @@
   ],
   "blocked_patterns": [
     "git\\s+reset\\s+--hard",
-    "git\\s+push\\s+--force(?:-with-lease)?",
+    "git\\s+push\\s+(?:--force(?:-with-lease)?|-f)\\b",
     "git\\s+checkout\\s+--",
     "git\\s+clean\\s+-[a-zA-Z]*f[a-zA-Z]*d",
     "(?:^|\\s)rm\\s+-rf\\s+/",

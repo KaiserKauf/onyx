@@ -23,7 +23,7 @@ DEFAULT_ALLOW_PREFIXES: tuple[str, ...] = (
 
 DEFAULT_BLOCKED_PATTERNS: tuple[str, ...] = (
     r"git\s+reset\s+--hard",
-    r"git\s+push\s+--force(?:-with-lease)?",
+    r"git\s+push\s+(?:--force(?:-with-lease)?|-f)\b",
     r"git\s+checkout\s+--",
     r"git\s+clean\s+-[a-zA-Z]*f[a-zA-Z]*d",
     r"(?:^|\s)rm\s+-rf\s+/",

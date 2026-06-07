@@ -17,6 +17,14 @@ def test_policy_blocks_destructive_git() -> None:
     assert decision.reason == "blocked_pattern"
 
 
+def test_policy_blocks_force_push_short_flag() -> None:
+    policy = AleivaPolicy.default()
+    decision = policy.evaluate_command("git push -f origin main")
+
+    assert decision.allowed is False
+    assert decision.reason == "blocked_pattern"
+
+
 def test_policy_allows_pytest_command() -> None:
     policy = AleivaPolicy.default()
     decision = policy.evaluate_command("pytest backend/tests/unit -q")
