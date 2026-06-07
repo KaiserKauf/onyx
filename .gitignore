@@ -12,6 +12,12 @@
 !/.cursor/skills/**
 !/.cursor/agents/
 !/.cursor/agents/**
+!/.cursor/hooks.json
+!/.cursor/hooks/
+!/.cursor/hooks/**
+.cursor/hooks/state/
+!/.cursor/rules/
+!/.cursor/rules/**
 
 # macos
 .DS_store

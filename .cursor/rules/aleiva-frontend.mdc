@@ -1,0 +1,31 @@
+---
+description: Aleiva Matrix dashboard UI at /aleiva — API, types, and E2E conventions
+globs: web/src/app/aleiva/**,web/tests/e2e/aleiva/**
+alwaysApply: false
+---
+
+# Aleiva Frontend
+
+## API access
+
+- Call the BFF only: `/api/aleiva/...` (via existing `api.ts` / `SWR_KEYS`).
+- Never call `http://localhost:8080` directly from the browser.
+
+## Type contract
+
+- Import explainability types from `explainability-types.ts` only — field names must match `backend/onyx/server/features/aleiva/models.py`.
+- Add backend fields first, then mirror in TypeScript with the same nullability.
+
+## UI
+
+- Matrix design: high contrast, state-aware panels, guided onboarding (`aleiva-matrix-onboarding-complete` in localStorage).
+- Use stable `data-testid` hooks for Playwright (`aleiva-dry-run-button`, `aleiva-explainability`, etc.).
+- Voice and trading panels are **non-execution** controls — show guardrail/safety copy; do not bypass policy UX.
+
+## Verify
+
+```bash
+cd web && npx playwright test tests/e2e/aleiva/aleiva_dashboard.spec.ts --project admin
+```
+
+Requires `web/node_modules` and Onyx at `http://localhost:3000` (login per AGENTS.md).

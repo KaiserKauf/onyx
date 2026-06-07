@@ -33,10 +33,12 @@ Delegate implementation with **aleiva-orchestrator**. Use specialists when neede
 
 | Task | Subagent |
 |------|----------|
+| Policy / runtime guardrails | aleiva-guardrails-engineer |
 | Dashboard UI | aleiva-frontend-builder |
-| Second-brain hygiene | aleiva-memory-curator |
+| Second-brain hygiene | aleiva-memory-curator (+ skill `aleiva-memory-hygiene`) |
 | Playwright E2E | aleiva-e2e-validator |
 | Commit / push / PR | aleiva-ship-agent |
+| PR triage / CI | aleiva-pr-babysitter |
 
 ## Build loop
 
@@ -91,6 +93,7 @@ Use `validate_run_completeness` in `backend/onyx/aleiva_core/events.py`.
 
 - Do **not** commit until user asks or **aleiva-ship-agent** is invoked
 - Ship only Aleiva-scoped paths; exclude unrelated diffs
+- Project hook `.cursor/hooks.json` blocks destructive git via `beforeShellExecution` (reset --hard, force push, git config, --no-verify)
 
 ## Additional resources
 

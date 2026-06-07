@@ -1,0 +1,46 @@
+---
+description: Aleiva backend conventions (core, API, Celery tasks, unit tests)
+globs: backend/onyx/aleiva_core/**,backend/onyx/server/features/aleiva/**,backend/onyx/background/celery/tasks/aleiva/**,backend/tests/unit/onyx/aleiva_core/**,backend/tests/unit/server/features/aleiva/**,backend/tests/unit/onyx/background/celery/tasks/aleiva/**
+alwaysApply: false
+---
+
+# Aleiva Backend
+
+## Errors
+
+Raise `OnyxError` from `onyx.error_handling.exceptions` — never `HTTPException` or raw status constants.
+
+```python
+from onyx.error_handling.error_codes import OnyxErrorCode
+from onyx.error_handling.exceptions import OnyxError
+
+raise OnyxError(OnyxErrorCode.NOT_FOUND, "Run not found")
+```
+
+## FastAPI
+
+- Type return values on route functions; do **not** use `response_model=`.
+- Register new routes in `backend/onyx/main.py` via the Aleiva router.
+
+## Non-forgetting
+
+Before marking a run complete, `validate_run_completeness` in `events.py` must pass: non-empty `goal`, `success_criteria`, and at least one meaningful `learnings` entry.
+
+## Explainability
+
+- Structured payloads live in `server/features/aleiva/models.py` and `explainability.py`.
+- Keep legacy string lists when adding `*_details` arrays for backward compatibility.
+- Never put secrets, tokens, or full shell commands in explainability JSON.
+
+## Celery
+
+- Use `@shared_task`; tasks under `background/celery/tasks/aleiva/`.
+- Always set `expires=` when enqueueing.
+- Beat hygiene is opt-in: `ALEIVA_MEMORY_HYGIENE_SCHEDULE_ENABLED`.
+
+## Verify
+
+```bash
+uv run python -m pytest backend/tests/unit/onyx/aleiva_core backend/tests/unit/server/features/aleiva backend/tests/unit/onyx/background/celery/tasks/aleiva -q
+uv run ruff check backend/onyx/aleiva_core backend/onyx/server/features/aleiva backend/onyx/background/celery/tasks/aleiva
+```

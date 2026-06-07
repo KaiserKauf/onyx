@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "python .cursor/hooks/aleiva-guard-git.py",
+        "matcher": "git ",
+        "timeout": 5
+      }
+    ]
+  }
+}

@@ -158,6 +158,29 @@ test.describe("Aleiva Matrix dashboard", () => {
     ).toBeVisible();
   });
 
+  test("memory hygiene panel runs hygiene endpoint", async ({ page }) => {
+    await page.addInitScript((storageKey) => {
+      window.localStorage.setItem(storageKey, "true");
+    }, ALEIVA_ONBOARDING_STORAGE_KEY);
+
+    await page.goto("/aleiva");
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.getByTestId("aleiva-memory-hygiene")).toBeVisible();
+
+    const hygieneResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/aleiva/memory/hygiene") &&
+        response.status() === 200
+    );
+    await page.getByTestId("aleiva-run-hygiene").click();
+    await hygieneResponse;
+
+    await expect(page.getByText(/Hygiene complete:/i)).toBeVisible({
+      timeout: 10000,
+    });
+  });
+
   test("kpi trends panel renders after status load", async ({ page }) => {
     await page.addInitScript((storageKey) => {
       window.localStorage.setItem(storageKey, "true");

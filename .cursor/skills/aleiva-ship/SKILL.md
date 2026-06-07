@@ -31,7 +31,7 @@ Include only Aleiva-related paths:
 - `web/tests/e2e/aleiva/**`
 - `web/src/lib/admin-routes.ts`, `swr-keys.ts`, `AdminSidebar.tsx` (when Aleiva-touched)
 - `docs/superpowers/specs/*aleiva*`
-- `.cursor/agents/aleiva-*.md`, `.cursor/skills/aleiva-*/` (when shipping tooling)
+- `.cursor/agents/aleiva-*.md`, `.cursor/skills/aleiva-*/` (e.g. `aleiva-memory-hygiene`), `.cursor/rules/aleiva-*.mdc`, `.cursor/hooks.json`, `.cursor/hooks/` (when shipping tooling)
 - `AGENTS.md` (Aleiva learnings section only)
 - `cli/internal/embedded/SKILL.md` (Aleiva CLI notes only)
 
@@ -81,6 +81,9 @@ Never run `git config` to change global/local config.
 
 For hands-off execution, invoke subagent: **aleiva-ship-agent**.
 
+After the PR is open, use [aleiva-pr-babysit](../aleiva-pr-babysit/SKILL.md) or **aleiva-pr-babysitter** for checks and review threads.
+
 ## Related
 
 - Dev loop: [../aleiva-autopilot/SKILL.md](../aleiva-autopilot/SKILL.md)
+- PR babysit: [../aleiva-pr-babysit/SKILL.md](../aleiva-pr-babysit/SKILL.md)
