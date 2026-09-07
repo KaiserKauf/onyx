@@ -193,6 +193,21 @@ test.describe("Aleiva Matrix dashboard", () => {
     await expect(page.getByText("Balanced KPI trends")).toBeVisible();
   });
 
+  test("platform switcher shows guided onboarding for Vulty", async ({ page }) => {
+    await page.addInitScript((storageKey) => {
+      window.localStorage.setItem(storageKey, "true");
+    }, ALEIVA_ONBOARDING_STORAGE_KEY);
+
+    await page.goto("/aleiva");
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.getByTestId("aleiva-platform-control")).toBeVisible();
+    await page.getByTestId("aleiva-platform-tab-vulty").click();
+    await expect(page.getByTestId("aleiva-platform-guide")).toBeVisible();
+    await expect(page.getByTestId("aleiva-trading-sandbox-copy")).toBeVisible();
+    await expect(page.getByText(/paper\/sandbox mode only/i)).toBeVisible();
+  });
+
   test("admin sidebar links to Aleiva dashboard", async ({ page }) => {
     await page.addInitScript((storageKey) => {
       window.localStorage.setItem(storageKey, "true");

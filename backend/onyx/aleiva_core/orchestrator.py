@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from onyx.aleiva_core.codebase_snapshot import capture_codebase_snapshot
+from onyx.aleiva_core.codebase_snapshot import CodebaseSnapshotStore
 from onyx.aleiva_core.eval import choose_lane
 from onyx.aleiva_core.events import validate_run_completeness
 from onyx.aleiva_core.policy import AleivaPolicy
@@ -41,10 +44,28 @@ def run_aleiva_cycle(
     dry_run: bool,
     policy_tier: PolicyTier = "normal",
     second_brain_store: SecondBrainStore | None = None,
+    platform_id: str | None = None,
+    snapshot_store: CodebaseSnapshotStore | None = None,
+    repo_path: Path | None = None,
 ) -> AleivaRunResult:
     active_store = second_brain_store
     policy = AleivaPolicy.default(tier=policy_tier)
-    goal_domain = _infer_goal_domain(goal)
+    goal_domain = platform_id or _infer_goal_domain(goal)
+    normalized_goal = (
+        f"{goal_domain}: {goal}" if goal_domain and not goal.lower().startswith(f"{goal_domain}:") else goal
+    )
+    codebase_snapshot = None
+    if not dry_run:
+        codebase_snapshot = capture_codebase_snapshot(
+            repo_path=repo_path,
+            run_id=normalized_goal,
+            platform_id=goal_domain if isinstance(goal_domain, str) else platform_id,
+        )
+        if snapshot_store is not None:
+            try:
+                snapshot_store.append(codebase_snapshot)
+            except OSError:
+                pass
     roi_priority_scores = rank_tasks_by_roi(
         [
             RoiTaskCandidate(
@@ -101,15 +122,19 @@ def run_aleiva_cycle(
             if dry_run:
                 sampled_entries = active_store.list_learnings(
                     limit=20,
-                    topic=goal,
-                    domain=goal_domain,
+                    topic=normalized_goal,
+                    domain=goal_domain if isinstance(goal_domain, str) else None,
                 )
                 hygiene_result = apply_memory_hygiene(sampled_entries)
                 memory_hygiene_actions = hygiene_result.actions
                 memory_hygiene_action_details = hygiene_result.action_details
             retrieval_context = [
                 entry.learning
-                for entry in active_store.retrieve(topic=goal, limit=3, domain=goal_domain)
+                for entry in active_store.retrieve(
+                    topic=normalized_goal,
+                    limit=3,
+                    domain=goal_domain if isinstance(goal_domain, str) else None,
+                )
                 if entry.learning
             ]
             if not retrieval_context:
@@ -119,13 +144,17 @@ def run_aleiva_cycle(
                     ]
                 else:
                     active_store.append_learning(
-                        topic=goal,
+                        topic=normalized_goal,
                         learning="Bootstrap context: apply strict guardrails and scoped changes first",
                         confidence=0.6,
                     )
                     retrieval_context = [
                         entry.learning
-                        for entry in active_store.retrieve(topic=goal, limit=3, domain=goal_domain)
+                        for entry in active_store.retrieve(
+                            topic=normalized_goal,
+                            limit=3,
+                            domain=goal_domain if isinstance(goal_domain, str) else None,
+                        )
                         if entry.learning
                     ]
         except (OSError, ValueError, TypeError):
@@ -142,7 +171,7 @@ def run_aleiva_cycle(
                 ]
 
     plan = [
-        f"Plan task for: {goal}",
+        f"Plan task for: {normalized_goal}",
         "Apply safe minimal changes first",
         f"Run under risk tier: {policy_tier}",
         f"Retrieved {len(retrieval_context)} prior context items",
@@ -152,7 +181,17 @@ def run_aleiva_cycle(
         ["quick checks pass", "targeted checks pass"],
         rerun_limit=2,
     )
-    learnings = [f"Prefer small scoped changes for goal: {goal}"]
+    learnings = [
+        f"Prefer small scoped changes for goal: {normalized_goal}",
+    ]
+    if codebase_snapshot is not None:
+        if codebase_snapshot.head_commit:
+            learnings.append(f"codebase_head:{codebase_snapshot.head_commit[:12]}")
+        if codebase_snapshot.changed_files:
+            learnings.append(
+                "files_in_scope:"
+                + ",".join(codebase_snapshot.changed_files[:5])
+            )
     policy_controls = policy.describe_controls()
     guardrail_checks = [
         ("git reset --hard", "destructive git guardrail"),
@@ -174,7 +213,7 @@ def run_aleiva_cycle(
     )
 
     run_record = AleivaRunRecord(
-        goal=goal,
+        goal=normalized_goal,
         success_criteria="Complete the scoped change with passing targeted checks",
         planner_decisions=[
             "Prioritize low-risk implementation sequence",
@@ -192,6 +231,21 @@ def run_aleiva_cycle(
         change_summary=[
             "Updated Aleiva orchestration flow in current run",
             "Preserved strict scope and guardrail policy",
+            *(
+                [f"git_branch:{codebase_snapshot.branch}"]
+                if codebase_snapshot and codebase_snapshot.branch
+                else []
+            ),
+            *(
+                [f"git_dirty:{len(codebase_snapshot.changed_files)} files"]
+                if codebase_snapshot and codebase_snapshot.is_dirty
+                else []
+            ),
+            *(
+                [f"changed:{path}" for path in codebase_snapshot.changed_files[:5]]
+                if codebase_snapshot and codebase_snapshot.changed_files
+                else []
+            ),
         ],
         verification_outcomes=verification,
         failure_classifications=["none"],
@@ -204,6 +258,12 @@ def run_aleiva_cycle(
         deferred_critical_issues=[],
         unresolved_critical_issues=[],
         final_disposition="completed",
+        files_changed=list(codebase_snapshot.changed_files) if codebase_snapshot else [],
+        codebase_context=[
+            *(f"branch:{codebase_snapshot.branch}" if codebase_snapshot and codebase_snapshot.branch else []),
+            *(f"commit:{codebase_snapshot.head_commit}" if codebase_snapshot and codebase_snapshot.head_commit else []),
+            *(f"dirty:{codebase_snapshot.is_dirty}" if codebase_snapshot else []),
+        ],
         learnings=learnings,
     )
     run_fields_complete, missing_artifacts = validate_run_completeness(run_record)
@@ -213,7 +273,7 @@ def run_aleiva_cycle(
     learning_persisted = True
     artifact_persisted = True
     relations = extract_relations(
-        source=f"task:{goal.strip() or 'unknown'}",
+        source=f"task:{normalized_goal.strip() or 'unknown'}",
         statements=[
             *(f"changed_in:{item}" for item in run_record.change_summary),
             *(f"fixed_by:{item}" for item in run_record.verification_outcomes),
@@ -227,7 +287,7 @@ def run_aleiva_cycle(
         else:
             try:
                 active_store.append_learning(
-                    topic=goal,
+                    topic=normalized_goal,
                     learning=learnings[0],
                     confidence=0.7,
                 )

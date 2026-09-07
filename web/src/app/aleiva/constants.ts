@@ -5,6 +5,8 @@ export const ALEIVA_DASHBOARD_PATH = "/aleiva" as Route;
 
 export const ALEIVA_ONBOARDING_STORAGE_KEY = "aleiva-matrix-onboarding-complete";
 
+export const ALEIVA_PLATFORM_STORAGE_KEY = "aleiva-selected-platform-id";
+
 export const ALEIVA_API_BASE = "/api/aleiva";
 
 export const POLICY_TIER_OPTIONS: {

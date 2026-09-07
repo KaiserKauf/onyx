@@ -116,3 +116,67 @@ export interface AleivaTradingAnalysisResponse {
   non_execution_safeguards: string[];
   explainability: Record<string, unknown>;
 }
+
+export type AleivaRiskLevel = "low" | "medium" | "high";
+
+export interface AleivaProbeTargetSummary {
+  label: string;
+  url: string;
+  kind: "http" | "websocket";
+}
+
+export interface AleivaPlatformSummary {
+  id: string;
+  display_name: string;
+  domains: string[];
+  product_type: string;
+  risk_level: AleivaRiskLevel;
+  capabilities: string[];
+  allowed_actions: string[];
+  control_surface_url: string | null;
+  probe_targets: AleivaProbeTargetSummary[];
+}
+
+export interface AleivaPlatformGuideResponse {
+  platform_id: string;
+  display_name: string;
+  risk_level: AleivaRiskLevel;
+  control_surface_url: string | null;
+  onboarding_steps: string[];
+  allowed_actions: string[];
+  capabilities: string[];
+  probe_targets: AleivaProbeTargetSummary[];
+  trading_mode: "paper_sandbox_only" | "not_applicable";
+  non_advice_notice: string | null;
+}
+
+export interface AleivaCodebaseSnapshotResponse {
+  repo_path: string;
+  branch: string | null;
+  head_commit: string | null;
+  is_dirty: boolean;
+  changed_files: string[];
+  run_id: string | null;
+  platform_id: string | null;
+  captured_at: number;
+  test_summary: string | null;
+}
+
+export interface AleivaPlatformLearningSummary {
+  platform_id: string;
+  display_name: string;
+  learning_count: number;
+  latest_learning: string | null;
+  run_count: number;
+  latest_run_disposition: string | null;
+  latest_snapshot_commit: string | null;
+  latest_snapshot_dirty: boolean | null;
+}
+
+export interface AleivaAgentLearningStatusResponse {
+  total_learnings: number;
+  total_runs: number;
+  dry_run_persistence: string;
+  platforms: AleivaPlatformLearningSummary[];
+  latest_snapshots: AleivaCodebaseSnapshotResponse[];
+}

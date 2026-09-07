@@ -7,6 +7,12 @@
         "matcher": "git ",
         "timeout": 5
       }
+    ],
+    "stop": [
+      {
+        "command": "python .cursor/hooks/aleiva-persist-learning.py",
+        "timeout": 10
+      }
     ]
   }
 }

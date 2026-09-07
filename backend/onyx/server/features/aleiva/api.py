@@ -5,11 +5,17 @@ from typing import Literal
 from fastapi import APIRouter
 from fastapi import Depends
 
+from onyx.aleiva_core.codebase_snapshot import capture_codebase_snapshot
+from onyx.aleiva_core.codebase_snapshot import CodebaseSnapshotStore
 from onyx.aleiva_core.controller import AleivaAutopilotController
 from onyx.aleiva_core.controller import AleivaTaskQueue
 from onyx.aleiva_core.eval import build_kpi_trends
+from onyx.aleiva_core.learning_audit import build_agent_learning_status
 from onyx.aleiva_core.orchestrator import AleivaRunResult
 from onyx.aleiva_core.orchestrator import run_aleiva_cycle
+from onyx.aleiva_core.platforms import get_platform
+from onyx.aleiva_core.platforms import list_platforms
+from onyx.aleiva_core.platforms import platform_guide
 from onyx.aleiva_core.second_brain.hygiene import apply_memory_hygiene
 from onyx.aleiva_core.second_brain.store import RunArtifactEntry
 from onyx.aleiva_core.second_brain.store import SecondBrainStore
@@ -23,14 +29,22 @@ from onyx.db.models import User
 from onyx.error_handling.error_codes import OnyxErrorCode
 from onyx.error_handling.exceptions import OnyxError
 from onyx.server.features.aleiva.explainability import build_dry_run_explainability
+from onyx.server.features.aleiva.models import AleivaAgentLearningStatusResponse
 from onyx.server.features.aleiva.models import AleivaAutopilotCycleSummary
 from onyx.server.features.aleiva.models import AleivaAutopilotRunRequest
 from onyx.server.features.aleiva.models import AleivaAutopilotRunResponse
+from onyx.server.features.aleiva.models import AleivaCodebaseSnapshotRequest
+from onyx.server.features.aleiva.models import AleivaCodebaseSnapshotResponse
 from onyx.server.features.aleiva.models import AleivaKpiSnapshot
 from onyx.server.features.aleiva.models import AleivaKpiTrendPoint
 from onyx.server.features.aleiva.models import AleivaKpiTrendsSummary
 from onyx.server.features.aleiva.models import AleivaMemoryHygieneRunResponse
 from onyx.server.features.aleiva.models import AleivaMemoryHygieneSummary
+from onyx.server.features.aleiva.models import AleivaMemoryIngestRequest
+from onyx.server.features.aleiva.models import AleivaPlatformGuideResponse
+from onyx.server.features.aleiva.models import AleivaPlatformLearningSummary
+from onyx.server.features.aleiva.models import AleivaPlatformSummary
+from onyx.server.features.aleiva.models import AleivaProbeTargetSummary
 from onyx.server.features.aleiva.models import AleivaQueueSummary
 from onyx.server.features.aleiva.models import AleivaRunArtifactSummary
 from onyx.server.features.aleiva.models import AleivaRunRequest
@@ -55,6 +69,7 @@ def run_dry_cycle(
         goal=request.goal,
         dry_run=True,
         policy_tier=request.policy_tier,
+        platform_id=request.platform_id,
         user=user,
     )
     response = AleivaRunResponse.model_validate(result.__dict__)
@@ -75,6 +90,7 @@ def run_cycle(
         goal=request.goal,
         dry_run=False,
         policy_tier=request.policy_tier,
+        platform_id=request.platform_id,
         user=user,
     )
     return AleivaRunResponse.model_validate(result.__dict__)
@@ -238,6 +254,166 @@ def trading_analysis(
     )
 
 
+@router.get("/platforms")
+def list_aleiva_platforms(
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> list[AleivaPlatformSummary]:
+    _ = user
+    return [
+        AleivaPlatformSummary(
+            id=platform.id,
+            display_name=platform.display_name,
+            domains=list(platform.domains),
+            product_type=platform.product_type,
+            risk_level=platform.risk_level,
+            capabilities=list(platform.capabilities),
+            allowed_actions=list(platform.allowed_actions),
+            control_surface_url=platform.control_surface_url,
+            probe_targets=[
+                AleivaProbeTargetSummary(
+                    label=probe.label,
+                    url=probe.url,
+                    kind=probe.kind,
+                )
+                for probe in platform.probe_targets
+            ],
+        )
+        for platform in list_platforms()
+    ]
+
+
+@router.get("/platforms/{platform_id}/guide")
+def get_platform_guide(
+    platform_id: str,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaPlatformGuideResponse:
+    _ = user
+    guide = platform_guide(platform_id)
+    if guide is None:
+        raise OnyxError(OnyxErrorCode.NOT_FOUND, f"Platform not found: {platform_id}")
+    return AleivaPlatformGuideResponse.model_validate(guide)
+
+
+@router.get("/agents/learning/status")
+def agent_learning_status(
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaAgentLearningStatusResponse:
+    store = _build_second_brain_store(user=user, dry_run=True, create_if_missing=False)
+    snapshot_store = _build_snapshot_store(user=user, create_if_missing=False)
+    status = build_agent_learning_status(store=store, snapshot_store=snapshot_store)
+    return AleivaAgentLearningStatusResponse(
+        total_learnings=status.total_learnings,
+        total_runs=status.total_runs,
+        dry_run_persistence=status.dry_run_persistence,
+        platforms=[
+            AleivaPlatformLearningSummary(
+                platform_id=entry.platform_id,
+                display_name=entry.display_name,
+                learning_count=entry.learning_count,
+                latest_learning=entry.latest_learning,
+                run_count=entry.run_count,
+                latest_run_disposition=entry.latest_run_disposition,
+                latest_snapshot_commit=entry.latest_snapshot_commit,
+                latest_snapshot_dirty=entry.latest_snapshot_dirty,
+            )
+            for entry in status.platforms
+        ],
+        latest_snapshots=[
+            AleivaCodebaseSnapshotResponse(
+                repo_path=snapshot.repo_path,
+                branch=snapshot.branch,
+                head_commit=snapshot.head_commit,
+                is_dirty=snapshot.is_dirty,
+                changed_files=snapshot.changed_files,
+                run_id=snapshot.run_id,
+                platform_id=snapshot.platform_id,
+                captured_at=snapshot.captured_at,
+                test_summary=snapshot.test_summary,
+            )
+            for snapshot in status.latest_snapshots
+        ],
+    )
+
+
+@router.post("/codebase/snapshot")
+def create_codebase_snapshot(
+    request: AleivaCodebaseSnapshotRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaCodebaseSnapshotResponse:
+    if request.platform_id is not None and get_platform(request.platform_id) is None:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            f"Unknown platform_id: {request.platform_id}",
+        )
+    snapshot_store = _build_snapshot_store(user=user, create_if_missing=True)
+    try:
+        snapshot = capture_codebase_snapshot(
+            run_id=request.run_id,
+            platform_id=request.platform_id,
+            test_summary=request.test_summary,
+        )
+        snapshot_store.append(snapshot)
+    except OSError as exc:
+        raise OnyxError(
+            OnyxErrorCode.INTERNAL_ERROR,
+            "Aleiva codebase snapshot storage unavailable",
+        ) from exc
+    return AleivaCodebaseSnapshotResponse(
+        repo_path=snapshot.repo_path,
+        branch=snapshot.branch,
+        head_commit=snapshot.head_commit,
+        is_dirty=snapshot.is_dirty,
+        changed_files=snapshot.changed_files,
+        run_id=snapshot.run_id,
+        platform_id=snapshot.platform_id,
+        captured_at=snapshot.captured_at,
+        test_summary=snapshot.test_summary,
+    )
+
+
+@router.post("/memory/ingest")
+def ingest_memory(
+    request: AleivaMemoryIngestRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaMemoryHygieneRunResponse:
+    if request.platform_id is not None and get_platform(request.platform_id) is None:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            f"Unknown platform_id: {request.platform_id}",
+        )
+    topic = request.topic.strip()
+    if request.platform_id and not topic.lower().startswith(f"{request.platform_id}:"):
+        topic = f"{request.platform_id}: {topic}"
+    try:
+        store = _build_second_brain_store(user=user, dry_run=False, create_if_missing=True)
+        store.append_learning(
+            topic=topic,
+            learning=request.learning.strip(),
+            confidence=request.confidence,
+        )
+    except OSError as exc:
+        raise OnyxError(
+            OnyxErrorCode.INTERNAL_ERROR,
+            "Aleiva memory ingest storage unavailable",
+        ) from exc
+    return AleivaMemoryHygieneRunResponse(
+        deduplicated_count=0,
+        decay_action_count=0,
+        action_count=1,
+        contradiction_guidance=[],
+        actions=[f"ingested learning for topic: {topic}"],
+    )
+
+
+def _build_snapshot_store(user: User, create_if_missing: bool) -> CodebaseSnapshotStore:
+    user_identifier = str(getattr(user, "id", "anonymous"))
+    safe_user_identifier = re.sub(r"[^a-zA-Z0-9_-]", "_", user_identifier)
+    return CodebaseSnapshotStore(
+        _ALEIVA_STORE_DIR / f"codebase_snapshots_{safe_user_identifier}.jsonl",
+        create_if_missing=create_if_missing,
+    )
+
+
 def _build_second_brain_store(
     user: User,
     dry_run: bool,
@@ -304,13 +480,24 @@ def _run_cycle_or_raise(
     dry_run: bool,
     policy_tier: Literal["safe", "normal", "experimental"],
     user: User,
+    platform_id: str | None = None,
 ) -> AleivaRunResult:
+    if platform_id is not None and get_platform(platform_id) is None:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            f"Unknown platform_id: {platform_id}",
+        )
     try:
         return run_aleiva_cycle(
             goal=goal,
             dry_run=dry_run,
             policy_tier=policy_tier,
+            platform_id=platform_id,
             second_brain_store=_build_second_brain_store(user, dry_run=dry_run),
+            snapshot_store=_build_snapshot_store(
+                user=user,
+                create_if_missing=not dry_run,
+            ),
         )
     except OSError as exc:
         raise OnyxError(

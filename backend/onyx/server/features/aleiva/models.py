@@ -39,6 +39,7 @@ class AleivaDryRunExplainability(BaseModel):
 class AleivaRunRequest(BaseModel):
     goal: str = Field(min_length=1)
     policy_tier: Literal["safe", "normal", "experimental"] = "normal"
+    platform_id: str | None = None
 
 
 class AleivaRunResponse(BaseModel):
@@ -161,3 +162,78 @@ class AleivaMemoryHygieneRunResponse(BaseModel):
     action_count: int
     contradiction_guidance: list[str]
     actions: list[str]
+
+
+class AleivaProbeTargetSummary(BaseModel):
+    label: str
+    url: str
+    kind: Literal["http", "websocket"] = "http"
+
+
+class AleivaPlatformSummary(BaseModel):
+    id: str
+    display_name: str
+    domains: list[str]
+    product_type: str
+    risk_level: Literal["low", "medium", "high"]
+    capabilities: list[str]
+    allowed_actions: list[str]
+    control_surface_url: str | None = None
+    probe_targets: list[AleivaProbeTargetSummary]
+
+
+class AleivaPlatformGuideResponse(BaseModel):
+    platform_id: str
+    display_name: str
+    risk_level: Literal["low", "medium", "high"]
+    control_surface_url: str | None = None
+    onboarding_steps: list[str]
+    allowed_actions: list[str]
+    capabilities: list[str]
+    probe_targets: list[AleivaProbeTargetSummary]
+    trading_mode: Literal["paper_sandbox_only", "not_applicable"]
+    non_advice_notice: str | None = None
+
+
+class AleivaCodebaseSnapshotRequest(BaseModel):
+    platform_id: str | None = None
+    run_id: str | None = None
+    test_summary: str | None = None
+
+
+class AleivaCodebaseSnapshotResponse(BaseModel):
+    repo_path: str
+    branch: str | None
+    head_commit: str | None
+    is_dirty: bool
+    changed_files: list[str]
+    run_id: str | None
+    platform_id: str | None
+    captured_at: float
+    test_summary: str | None = None
+
+
+class AleivaPlatformLearningSummary(BaseModel):
+    platform_id: str
+    display_name: str
+    learning_count: int
+    latest_learning: str | None
+    run_count: int
+    latest_run_disposition: str | None
+    latest_snapshot_commit: str | None
+    latest_snapshot_dirty: bool | None
+
+
+class AleivaAgentLearningStatusResponse(BaseModel):
+    total_learnings: int
+    total_runs: int
+    dry_run_persistence: str
+    platforms: list[AleivaPlatformLearningSummary]
+    latest_snapshots: list[AleivaCodebaseSnapshotResponse]
+
+
+class AleivaMemoryIngestRequest(BaseModel):
+    topic: str = Field(min_length=1)
+    learning: str = Field(min_length=1)
+    platform_id: str | None = None
+    confidence: float = Field(default=0.6, ge=0.0, le=1.0)

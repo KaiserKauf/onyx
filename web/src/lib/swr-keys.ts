@@ -224,4 +224,6 @@ export const SWR_KEYS = {
 
   // ── Aleiva Matrix ─────────────────────────────────────────────────────────
   aleivaRunStatus: "/api/aleiva/runs/status",
+  aleivaPlatforms: "/api/aleiva/platforms",
+  aleivaLearningStatus: "/api/aleiva/agents/learning/status",
 } as const;

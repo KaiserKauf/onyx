@@ -15,3 +15,5 @@ class AleivaRunRecord(BaseModel):
     unresolved_critical_issues: list[str] = Field(default_factory=list)
     final_disposition: str | None = None
     learnings: list[str] = Field(default_factory=list)
+    codebase_context: list[str] = Field(default_factory=list)
+    files_changed: list[str] = Field(default_factory=list)

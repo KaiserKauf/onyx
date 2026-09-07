@@ -4,7 +4,10 @@
 
 import type {
   AleivaAutopilotRunResponse,
+  AleivaAgentLearningStatusResponse,
   AleivaMemoryHygieneRunResponse,
+  AleivaPlatformGuideResponse,
+  AleivaPlatformSummary,
   AleivaPolicyTier,
   AleivaRunResponse,
   AleivaTradingAnalysisRequest,
@@ -91,4 +94,24 @@ export async function runTradingAnalysis(
   });
   if (!res.ok) await readError(res, "Failed to run trading analysis");
   return (await res.json()) as AleivaTradingAnalysisResponse;
+}
+
+export async function fetchPlatforms(): Promise<AleivaPlatformSummary[]> {
+  const res = await fetch(`${ALEIVA_API_BASE}/platforms`);
+  if (!res.ok) await readError(res, "Failed to load Aleiva platforms");
+  return (await res.json()) as AleivaPlatformSummary[];
+}
+
+export async function fetchPlatformGuide(
+  platformId: string
+): Promise<AleivaPlatformGuideResponse> {
+  const res = await fetch(`${ALEIVA_API_BASE}/platforms/${platformId}/guide`);
+  if (!res.ok) await readError(res, "Failed to load platform guide");
+  return (await res.json()) as AleivaPlatformGuideResponse;
+}
+
+export async function fetchAgentLearningStatus(): Promise<AleivaAgentLearningStatusResponse> {
+  const res = await fetch(`${ALEIVA_API_BASE}/agents/learning/status`);
+  if (!res.ok) await readError(res, "Failed to load agent learning status");
+  return (await res.json()) as AleivaAgentLearningStatusResponse;
 }

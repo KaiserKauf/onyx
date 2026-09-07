@@ -24,6 +24,10 @@ def validate_run_completeness(run: AleivaRunRecord) -> tuple[bool, list[str]]:
         missing_fields.append("final_disposition")
     if not _has_non_empty_learning(run.learnings):
         missing_fields.append("learnings")
+    if run.files_changed and not _has_non_empty_entries(run.files_changed):
+        missing_fields.append("files_changed")
+    if run.codebase_context and not _has_non_empty_entries(run.codebase_context):
+        missing_fields.append("codebase_context")
     if _has_unresolved_critical_issues(run):
         missing_fields.append("unresolved_critical_issues")
 

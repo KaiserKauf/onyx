@@ -16,6 +16,7 @@ import type {
 } from "@/app/aleiva/interfaces";
 import { runAutopilotDry } from "@/app/aleiva/api";
 import { OnboardingGuide } from "@/app/aleiva/components/OnboardingGuide";
+import { PlatformControlPanel } from "@/app/aleiva/components/PlatformControlPanel";
 import { QueueStatusCards } from "@/app/aleiva/components/QueueStatusCards";
 import { RunGoalPanel } from "@/app/aleiva/components/RunGoalPanel";
 import { ExplainabilityPanel } from "@/app/aleiva/components/ExplainabilityPanel";
@@ -102,6 +103,7 @@ export default function AleivaDashboardPage() {
       />
       <SettingsLayouts.Body>
         <OnboardingGuide />
+        <PlatformControlPanel />
 
         {isLoading ? (
           <div className="flex justify-center py-12">
