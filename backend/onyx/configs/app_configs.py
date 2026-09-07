@@ -1084,6 +1084,14 @@ SCHEDULED_EVAL_PERMISSIONS_EMAIL = os.environ.get(
 SCHEDULED_EVAL_PROJECT = os.environ.get("SCHEDULED_EVAL_PROJECT", "st-dev")
 
 #####
+# Aleiva Configuration
+#####
+# Opt-in hourly beat entry for second-brain memory hygiene (see aleiva celery tasks).
+ALEIVA_MEMORY_HYGIENE_SCHEDULE_ENABLED = (
+    os.environ.get("ALEIVA_MEMORY_HYGIENE_SCHEDULE_ENABLED", "").lower() == "true"
+)
+
+#####
 # Langfuse Configuration
 #####
 # Langfuse API credentials - if provided, Langfuse tracing will be enabled

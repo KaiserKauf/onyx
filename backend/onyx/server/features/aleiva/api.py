@@ -1,0 +1,506 @@
+import re
+from pathlib import Path
+from typing import Literal
+
+from fastapi import APIRouter
+from fastapi import Depends
+
+from onyx.aleiva_core.codebase_snapshot import capture_codebase_snapshot
+from onyx.aleiva_core.codebase_snapshot import CodebaseSnapshotStore
+from onyx.aleiva_core.controller import AleivaAutopilotController
+from onyx.aleiva_core.controller import AleivaTaskQueue
+from onyx.aleiva_core.eval import build_kpi_trends
+from onyx.aleiva_core.learning_audit import build_agent_learning_status
+from onyx.aleiva_core.orchestrator import AleivaRunResult
+from onyx.aleiva_core.orchestrator import run_aleiva_cycle
+from onyx.aleiva_core.platforms import get_platform
+from onyx.aleiva_core.platforms import list_platforms
+from onyx.aleiva_core.platforms import platform_guide
+from onyx.aleiva_core.second_brain.hygiene import apply_memory_hygiene
+from onyx.aleiva_core.second_brain.store import RunArtifactEntry
+from onyx.aleiva_core.second_brain.store import SecondBrainStore
+from onyx.aleiva_core.trading_analysis import run_trading_analysis_pack
+from onyx.aleiva_core.trading_analysis import TradingAnalysisRequest
+from onyx.aleiva_core.voice_control import handle_voice_control
+from onyx.aleiva_core.voice_control import VoiceControlRequest
+from onyx.auth.permissions import require_permission
+from onyx.db.enums import Permission
+from onyx.db.models import User
+from onyx.error_handling.error_codes import OnyxErrorCode
+from onyx.error_handling.exceptions import OnyxError
+from onyx.server.features.aleiva.explainability import build_dry_run_explainability
+from onyx.server.features.aleiva.models import AleivaAgentLearningStatusResponse
+from onyx.server.features.aleiva.models import AleivaAutopilotCycleSummary
+from onyx.server.features.aleiva.models import AleivaAutopilotRunRequest
+from onyx.server.features.aleiva.models import AleivaAutopilotRunResponse
+from onyx.server.features.aleiva.models import AleivaCodebaseSnapshotRequest
+from onyx.server.features.aleiva.models import AleivaCodebaseSnapshotResponse
+from onyx.server.features.aleiva.models import AleivaKpiSnapshot
+from onyx.server.features.aleiva.models import AleivaKpiTrendPoint
+from onyx.server.features.aleiva.models import AleivaKpiTrendsSummary
+from onyx.server.features.aleiva.models import AleivaMemoryHygieneRunResponse
+from onyx.server.features.aleiva.models import AleivaMemoryHygieneSummary
+from onyx.server.features.aleiva.models import AleivaMemoryIngestRequest
+from onyx.server.features.aleiva.models import AleivaPlatformGuideResponse
+from onyx.server.features.aleiva.models import AleivaPlatformLearningSummary
+from onyx.server.features.aleiva.models import AleivaPlatformSummary
+from onyx.server.features.aleiva.models import AleivaProbeTargetSummary
+from onyx.server.features.aleiva.models import AleivaQueueSummary
+from onyx.server.features.aleiva.models import AleivaRunArtifactSummary
+from onyx.server.features.aleiva.models import AleivaRunRequest
+from onyx.server.features.aleiva.models import AleivaRunResponse
+from onyx.server.features.aleiva.models import AleivaRunStatusResponse
+from onyx.server.features.aleiva.models import AleivaTradingAnalysisRequest
+from onyx.server.features.aleiva.models import AleivaTradingAnalysisResponse
+from onyx.server.features.aleiva.models import AleivaVoiceControlRequest
+from onyx.server.features.aleiva.models import AleivaVoiceControlResponse
+
+router = APIRouter(prefix="/aleiva")
+_ALEIVA_STORE_DIR = Path(__file__).resolve().parents[4] / ".aleiva"
+_ALEIVA_QUEUE_DIR = Path(__file__).resolve().parents[4] / ".aleiva"
+
+
+@router.post("/runs/dry")
+def run_dry_cycle(
+    request: AleivaRunRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaRunResponse:
+    result = _run_cycle_or_raise(
+        goal=request.goal,
+        dry_run=True,
+        policy_tier=request.policy_tier,
+        platform_id=request.platform_id,
+        user=user,
+    )
+    response = AleivaRunResponse.model_validate(result.__dict__)
+    response.explainability = build_dry_run_explainability(
+        goal=request.goal,
+        policy_tier=request.policy_tier,
+        result=result,
+    )
+    return response
+
+
+@router.post("/runs")
+def run_cycle(
+    request: AleivaRunRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaRunResponse:
+    result = _run_cycle_or_raise(
+        goal=request.goal,
+        dry_run=False,
+        policy_tier=request.policy_tier,
+        platform_id=request.platform_id,
+        user=user,
+    )
+    return AleivaRunResponse.model_validate(result.__dict__)
+
+
+@router.get("/runs/status")
+def run_status(
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaRunStatusResponse:
+    store = _build_second_brain_store(user=user, dry_run=True, create_if_missing=False)
+    queue = _build_task_queue(user=user, create_if_missing=False)
+
+    queue_tasks = queue.list_tasks(limit=200)
+    queue_summary = AleivaQueueSummary(
+        queued=sum(1 for task in queue_tasks if task.status == "queued"),
+        running=sum(1 for task in queue_tasks if task.status == "running"),
+        completed=sum(1 for task in queue_tasks if task.status == "completed"),
+        failed=sum(1 for task in queue_tasks if task.status == "failed"),
+        paused=sum(1 for task in queue_tasks if task.status == "paused"),
+    )
+
+    latest_run_entries = store.list_run_artifacts(limit=10)
+    latest_runs = [
+        _serialize_run_artifact(entry)
+        for entry in latest_run_entries
+    ]
+    sampled_entries = store.list_learnings(limit=30)
+    hygiene = apply_memory_hygiene(sampled_entries)
+    kpi_trends = _serialize_kpi_trends(latest_run_entries)
+
+    return AleivaRunStatusResponse(
+        queue=queue_summary,
+        latest_runs=latest_runs,
+        memory_hygiene=AleivaMemoryHygieneSummary(
+            sampled_entries=len(sampled_entries),
+            action_count=len(hygiene.actions),
+            actions=hygiene.actions,
+        ),
+        kpi_trends=kpi_trends,
+    )
+
+
+@router.post("/autopilot/run")
+def run_autopilot(
+    request: AleivaAutopilotRunRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaAutopilotRunResponse:
+    queue = _build_task_queue(user=user, create_if_missing=True)
+    store = _build_second_brain_store(
+        user=user,
+        dry_run=request.dry_run,
+        create_if_missing=not request.dry_run,
+    )
+    controller = AleivaAutopilotController(
+        queue=queue,
+        max_iterations_per_run=request.max_iterations,
+    )
+    outcomes = controller.run_until_idle(
+        dry_run=request.dry_run,
+        second_brain_store=store,
+    )
+    queue_tasks = queue.list_tasks(limit=200)
+    return AleivaAutopilotRunResponse(
+        cycles_completed=len(outcomes),
+        cycles=[
+            AleivaAutopilotCycleSummary(
+                task_id=result.task.task_id,
+                goal=result.task.goal,
+                status=result.status,
+                reason=result.reason,
+                run_status=result.run_result.status if result.run_result else None,
+            )
+            for result in outcomes
+        ],
+        queue=AleivaQueueSummary(
+            queued=sum(1 for task in queue_tasks if task.status == "queued"),
+            running=sum(1 for task in queue_tasks if task.status == "running"),
+            completed=sum(1 for task in queue_tasks if task.status == "completed"),
+            failed=sum(1 for task in queue_tasks if task.status == "failed"),
+            paused=sum(1 for task in queue_tasks if task.status == "paused"),
+        ),
+    )
+
+
+@router.post("/memory/hygiene")
+def run_memory_hygiene(
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaMemoryHygieneRunResponse:
+    try:
+        store = _build_second_brain_store(user=user, dry_run=False, create_if_missing=True)
+        summary = store.apply_scheduled_hygiene()
+    except OSError as exc:
+        raise OnyxError(
+            OnyxErrorCode.INTERNAL_ERROR,
+            "Aleiva memory hygiene storage unavailable",
+        ) from exc
+
+    contradiction_guidance = summary.get("contradiction_guidance", [])
+    actions = summary.get("actions", [])
+    return AleivaMemoryHygieneRunResponse(
+        deduplicated_count=int(summary.get("deduplicated_count", 0)),
+        decay_action_count=int(summary.get("decay_action_count", 0)),
+        action_count=int(summary.get("action_count", 0)),
+        contradiction_guidance=(
+            [str(item) for item in contradiction_guidance]
+            if isinstance(contradiction_guidance, list)
+            else []
+        ),
+        actions=[str(item) for item in actions] if isinstance(actions, list) else [],
+    )
+
+
+@router.post("/voice/control")
+def voice_control(
+    request: AleivaVoiceControlRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaVoiceControlResponse:
+    queue = _build_task_queue(user=user, create_if_missing=True)
+    store = _build_second_brain_store(user=user, dry_run=True, create_if_missing=False)
+    response = handle_voice_control(
+        VoiceControlRequest(
+            intent=request.intent,
+            goal=request.goal,
+            task_id=request.task_id,
+            policy_tier=request.policy_tier,
+        ),
+        queue=queue,
+        second_brain_store=store,
+    )
+    return AleivaVoiceControlResponse(
+        status=response.status,
+        message=response.message,
+        queue=AleivaQueueSummary(**response.queue),
+        enqueued_task_id=response.enqueued_task_id,
+        report=response.report,
+    )
+
+
+@router.post("/trading/analysis")
+def trading_analysis(
+    request: AleivaTradingAnalysisRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaTradingAnalysisResponse:
+    store = _build_second_brain_store(user=user, dry_run=True, create_if_missing=False)
+    result = run_trading_analysis_pack(
+        TradingAnalysisRequest(
+            market=request.market,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            thesis=request.thesis,
+            risk_focus=request.risk_focus,
+        ),
+        second_brain_store=store,
+    )
+    return AleivaTradingAnalysisResponse(
+        status=result.status,
+        analysis=result.analysis,
+        risk_review=result.risk_review,
+        non_execution_safeguards=result.non_execution_safeguards,
+        explainability=result.explainability,
+    )
+
+
+@router.get("/platforms")
+def list_aleiva_platforms(
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> list[AleivaPlatformSummary]:
+    _ = user
+    return [
+        AleivaPlatformSummary(
+            id=platform.id,
+            display_name=platform.display_name,
+            domains=list(platform.domains),
+            product_type=platform.product_type,
+            risk_level=platform.risk_level,
+            capabilities=list(platform.capabilities),
+            allowed_actions=list(platform.allowed_actions),
+            control_surface_url=platform.control_surface_url,
+            probe_targets=[
+                AleivaProbeTargetSummary(
+                    label=probe.label,
+                    url=probe.url,
+                    kind=probe.kind,
+                )
+                for probe in platform.probe_targets
+            ],
+        )
+        for platform in list_platforms()
+    ]
+
+
+@router.get("/platforms/{platform_id}/guide")
+def get_platform_guide(
+    platform_id: str,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaPlatformGuideResponse:
+    _ = user
+    guide = platform_guide(platform_id)
+    if guide is None:
+        raise OnyxError(OnyxErrorCode.NOT_FOUND, f"Platform not found: {platform_id}")
+    return AleivaPlatformGuideResponse.model_validate(guide)
+
+
+@router.get("/agents/learning/status")
+def agent_learning_status(
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaAgentLearningStatusResponse:
+    store = _build_second_brain_store(user=user, dry_run=True, create_if_missing=False)
+    snapshot_store = _build_snapshot_store(user=user, create_if_missing=False)
+    status = build_agent_learning_status(store=store, snapshot_store=snapshot_store)
+    return AleivaAgentLearningStatusResponse(
+        total_learnings=status.total_learnings,
+        total_runs=status.total_runs,
+        dry_run_persistence=status.dry_run_persistence,
+        platforms=[
+            AleivaPlatformLearningSummary(
+                platform_id=entry.platform_id,
+                display_name=entry.display_name,
+                learning_count=entry.learning_count,
+                latest_learning=entry.latest_learning,
+                run_count=entry.run_count,
+                latest_run_disposition=entry.latest_run_disposition,
+                latest_snapshot_commit=entry.latest_snapshot_commit,
+                latest_snapshot_dirty=entry.latest_snapshot_dirty,
+            )
+            for entry in status.platforms
+        ],
+        latest_snapshots=[
+            AleivaCodebaseSnapshotResponse(
+                repo_path=snapshot.repo_path,
+                branch=snapshot.branch,
+                head_commit=snapshot.head_commit,
+                is_dirty=snapshot.is_dirty,
+                changed_files=snapshot.changed_files,
+                run_id=snapshot.run_id,
+                platform_id=snapshot.platform_id,
+                captured_at=snapshot.captured_at,
+                test_summary=snapshot.test_summary,
+            )
+            for snapshot in status.latest_snapshots
+        ],
+    )
+
+
+@router.post("/codebase/snapshot")
+def create_codebase_snapshot(
+    request: AleivaCodebaseSnapshotRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaCodebaseSnapshotResponse:
+    if request.platform_id is not None and get_platform(request.platform_id) is None:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            f"Unknown platform_id: {request.platform_id}",
+        )
+    snapshot_store = _build_snapshot_store(user=user, create_if_missing=True)
+    try:
+        snapshot = capture_codebase_snapshot(
+            run_id=request.run_id,
+            platform_id=request.platform_id,
+            test_summary=request.test_summary,
+        )
+        snapshot_store.append(snapshot)
+    except OSError as exc:
+        raise OnyxError(
+            OnyxErrorCode.INTERNAL_ERROR,
+            "Aleiva codebase snapshot storage unavailable",
+        ) from exc
+    return AleivaCodebaseSnapshotResponse(
+        repo_path=snapshot.repo_path,
+        branch=snapshot.branch,
+        head_commit=snapshot.head_commit,
+        is_dirty=snapshot.is_dirty,
+        changed_files=snapshot.changed_files,
+        run_id=snapshot.run_id,
+        platform_id=snapshot.platform_id,
+        captured_at=snapshot.captured_at,
+        test_summary=snapshot.test_summary,
+    )
+
+
+@router.post("/memory/ingest")
+def ingest_memory(
+    request: AleivaMemoryIngestRequest,
+    user: User = Depends(require_permission(Permission.BASIC_ACCESS)),
+) -> AleivaMemoryHygieneRunResponse:
+    if request.platform_id is not None and get_platform(request.platform_id) is None:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            f"Unknown platform_id: {request.platform_id}",
+        )
+    topic = request.topic.strip()
+    if request.platform_id and not topic.lower().startswith(f"{request.platform_id}:"):
+        topic = f"{request.platform_id}: {topic}"
+    try:
+        store = _build_second_brain_store(user=user, dry_run=False, create_if_missing=True)
+        store.append_learning(
+            topic=topic,
+            learning=request.learning.strip(),
+            confidence=request.confidence,
+        )
+    except OSError as exc:
+        raise OnyxError(
+            OnyxErrorCode.INTERNAL_ERROR,
+            "Aleiva memory ingest storage unavailable",
+        ) from exc
+    return AleivaMemoryHygieneRunResponse(
+        deduplicated_count=0,
+        decay_action_count=0,
+        action_count=1,
+        contradiction_guidance=[],
+        actions=[f"ingested learning for topic: {topic}"],
+    )
+
+
+def _build_snapshot_store(user: User, create_if_missing: bool) -> CodebaseSnapshotStore:
+    user_identifier = str(getattr(user, "id", "anonymous"))
+    safe_user_identifier = re.sub(r"[^a-zA-Z0-9_-]", "_", user_identifier)
+    return CodebaseSnapshotStore(
+        _ALEIVA_STORE_DIR / f"codebase_snapshots_{safe_user_identifier}.jsonl",
+        create_if_missing=create_if_missing,
+    )
+
+
+def _build_second_brain_store(
+    user: User,
+    dry_run: bool,
+    create_if_missing: bool | None = None,
+) -> SecondBrainStore:
+    user_identifier = str(getattr(user, "id", "anonymous"))
+    safe_user_identifier = re.sub(r"[^a-zA-Z0-9_-]", "_", user_identifier)
+    should_create = not dry_run if create_if_missing is None else create_if_missing
+    return SecondBrainStore(
+        _ALEIVA_STORE_DIR / f"second_brain_{safe_user_identifier}.jsonl",
+        create_if_missing=should_create,
+    )
+
+
+def _build_task_queue(user: User, create_if_missing: bool) -> AleivaTaskQueue:
+    user_identifier = str(getattr(user, "id", "anonymous"))
+    safe_user_identifier = re.sub(r"[^a-zA-Z0-9_-]", "_", user_identifier)
+    return AleivaTaskQueue(
+        _ALEIVA_QUEUE_DIR / f"task_queue_{safe_user_identifier}.json",
+        create_if_missing=create_if_missing,
+    )
+
+
+def _serialize_run_artifact(entry: RunArtifactEntry) -> AleivaRunArtifactSummary:
+    return AleivaRunArtifactSummary(
+        goal=entry.goal,
+        final_disposition=entry.final_disposition,
+        lane=entry.lane,
+        missing_artifacts=entry.missing_artifacts,
+        verification_outcomes=entry.verification_outcomes,
+    )
+
+
+def _serialize_kpi_trends(
+    run_entries: list[RunArtifactEntry],
+) -> AleivaKpiTrendsSummary | None:
+    trends = build_kpi_trends(run_entries)
+    if trends is None:
+        return None
+    return AleivaKpiTrendsSummary(
+        current=AleivaKpiSnapshot(
+            speed=trends.current.speed,
+            quality=trends.current.quality,
+            knowledge_reuse=trends.current.knowledge_reuse,
+            lane=trends.current.lane,
+        ),
+        trend=trends.trend,
+        points=[
+            AleivaKpiTrendPoint(
+                run_index=point.run_index,
+                goal=point.goal,
+                speed=point.speed,
+                quality=point.quality,
+                knowledge_reuse=point.knowledge_reuse,
+                lane=point.lane,
+            )
+            for point in trends.points
+        ],
+    )
+
+
+def _run_cycle_or_raise(
+    goal: str,
+    dry_run: bool,
+    policy_tier: Literal["safe", "normal", "experimental"],
+    user: User,
+    platform_id: str | None = None,
+) -> AleivaRunResult:
+    if platform_id is not None and get_platform(platform_id) is None:
+        raise OnyxError(
+            OnyxErrorCode.VALIDATION_ERROR,
+            f"Unknown platform_id: {platform_id}",
+        )
+    try:
+        return run_aleiva_cycle(
+            goal=goal,
+            dry_run=dry_run,
+            policy_tier=policy_tier,
+            platform_id=platform_id,
+            second_brain_store=_build_second_brain_store(user, dry_run=dry_run),
+            snapshot_store=_build_snapshot_store(
+                user=user,
+                create_if_missing=not dry_run,
+            ),
+        )
+    except OSError as exc:
+        raise OnyxError(
+            OnyxErrorCode.INTERNAL_ERROR,
+            "Aleiva run storage unavailable",
+        ) from exc

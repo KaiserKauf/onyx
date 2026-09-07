@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "allow_prefixes": [
+    "pytest ",
+    "uv run pytest ",
+    "ruff ",
+    "uv run ruff ",
+    "mypy ",
+    "uv run mypy ",
+    "python ",
+    "uv run python ",
+    "git status",
+    "git diff",
+    "git show"
+  ],
+  "blocked_patterns": [
+    "git\\s+reset\\s+--hard",
+    "git\\s+push\\s+(?:--force(?:-with-lease)?|-f)\\b",
+    "git\\s+checkout\\s+--",
+    "git\\s+clean\\s+-[a-zA-Z]*f[a-zA-Z]*d",
+    "(?:^|\\s)rm\\s+-rf\\s+/",
+    "(?:^|\\s)del\\s+/[sq]\\s+/[sq]"
+  ],
+  "tiers": {
+    "safe": {
+      "max_commands_per_run": 5,
+      "max_timeout_seconds": 20
+    },
+    "normal": {
+      "max_commands_per_run": 12,
+      "max_timeout_seconds": 45
+    },
+    "experimental": {
+      "max_commands_per_run": 20,
+      "max_timeout_seconds": 120
+    }
+  }
+}

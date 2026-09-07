@@ -620,6 +620,8 @@ class OnyxCeleryTask:
     EVAL_RUN_TASK = "eval_run_task"
     SCHEDULED_EVAL_TASK = "scheduled_eval_task"
 
+    ALEIVA_MEMORY_HYGIENE_TASK = "aleiva_memory_hygiene_task"
+
     EXPORT_QUERY_HISTORY_TASK = "export_query_history_task"
     EXPORT_QUERY_HISTORY_CLEANUP_TASK = "export_query_history_cleanup_task"
 
