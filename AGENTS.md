@@ -377,6 +377,6 @@ to the codebase can be found in the "Engineering Best Practices" section of
 
 - **Python venv**: Created at `.venv` using `uv venv --python 3.11`. Activate with `source .venv/bin/activate`. Dependencies installed via `uv sync --group backend --group dev`.
 - **Frontend**: `web/` uses Bun (`bun.lock`). Run `bun install` then `bun dev` for the Next.js dev server.
-- **Unit tests**: `pytest -xv backend/tests/unit` runs ~1325 tests. One test (`test_confluence_checkpointing`) may fail due to Redis not being available — this is expected in environments without Docker services.
-- **Docker services**: Full integration/E2E tests require PostgreSQL, Redis, Vespa, and MinIO running via Docker Compose (see `deployment/docker_compose/`). Unit tests do not require these.
-- **Lint**: Use `source .venv/bin/activate && pre-commit run --all-files` for full linting (Python + JS).
+- **Unit tests**: `pytest -xv backend/tests/unit` runs ~4175 tests. The `test_confluence_checkpointing` test may fail due to Redis not being available — skip it with `--ignore=backend/tests/unit/onyx/connectors/confluence`.
+- **Docker services**: Full integration/E2E tests require PostgreSQL, Redis, Vespa, and MinIO running via Docker Compose (see `deployment/docker_compose/`). Unit tests do not require these. Docker is not available on Cloud Agent VMs.
+- **Frontend**: `web/` uses Bun (`bun.lock`). Run `bun install` then `bun dev` to start the Next.js dev server. The frontend starts but shows a connection error page without the backend running.
